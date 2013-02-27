@@ -55,7 +55,7 @@ function _nodejs_acceslog_get_country() {
   $data = $_SESSION['hostip_data'];
 
   // Return what hostip found.... or be funny.
-  return $data['countrycode'] == 'XX' ?
+  return $data['countrycode'] == 'XX' && isset($data['latitude']) ?
     array('latitude' => 35, 'longitude' => -41) : array('latitude' => $data['latitude'], 'longitude' => $data['longitude']);
 }
 
