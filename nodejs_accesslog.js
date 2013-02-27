@@ -43,6 +43,11 @@
 	    }
 	  });
 
+	  // Let's keep this one short, Google doesn't handle many items in a series well
+	  if(found && (chart.dataArray.length > 10)) {
+	    chart.dataArray.splice(1, 1);
+	  }
+
 	  // If there weren't any current requests in this perdiod, add a new row
 	  if(!found && !map) {
 	    chart.dataArray.push([message.data.period, 1]);
