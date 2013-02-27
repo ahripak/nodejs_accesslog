@@ -1,0 +1,198 @@
+<?php
+
+/**
+ * Implements hook_menu().
+ */
+function nodejs_accesslog_menu() {
+  // The main page of this module were you can see realtime access attempts on Drupal
+  $items['admin/reports/accesslog'] = array(
+    'title' => t('Node.js Access Log'),
+    'description' => t('View current page requests being made and stats on them'),
+    'page callback' => 'nodejs_accesslog_view',
+    'access arguments' => array('access nodejs accesslog'),
+  );
+
+  // Provide default tab
+  $items['admin/reports/accesslog/default'] = array(
+    'title' => t('Access Log'),
+    'type' => MENU_DEFAULT_LOCAL_TASK,
+  );
+
+  // Settings tab
+  $items['admin/reports/accesslog/settings'] = array(
+    'title' => t('Settings'),
+    'description' => t('Node.js Access Log Settings'),
+    'page callback' => 'drupal_get_form',
+    'page arguments' => array('nodejs_accesslog_admin_form'),
+    'access arguments' => array('administer site configuration'),
+    'file' => 'nodejs_accesslog.admin.inc',
+    'type' => MENU_LOCAL_TASK,
+  );
+  return $items;
+}
+
+
+/**
+ * Implements hook_permission().
+ */
+function nodejs_accesslog_permission() {
+  // Essentially this permission should be given to roles that will look at the default menu item
+  return array(
+    'access nodejs accesslog' => array(
+      'title' => t('Access the Node.js Access Log'),
+    ),
+  );
+}
+
+
+/**
+ * Returns country information provided by hostip module.
+ *
+ * @return array
+ *   Associative array of lat and long values.
+ */
+function _nodejs_acceslog_get_country() {
+  $data = $_SESSION['hostip_data'];
+
+  // Return what hostip found.... or be funny.
+  return $data['countrycode'] == 'XX' ?
+    array('latitude' => 35, 'longitude' => -41) : array('latitude' => $data['latitude'], 'longitude' => $data['longitude']);
+}
+
+
+/**
+ * Returns the current hour and minutes rounded to the nearest interval
+ * set on the settings page.
+ *
+ * @return string
+ *   Formatted string containing hours and minutes.
+ */
+function _nodejs_accesslog_get_period() {
+  return date('h') . ":" . (date('i') - (date('i') % variable_get('nodejs_accesslog_period', 5)));
+}
+
+
+/**
+ * Page callback function for our 'admin/reports/accesslog'.
+ *
+ * @return array
+ *   Returns a render array for a Google Visualization chart.
+ */
+function nodejs_accesslog_view() {
+  $period = _nodejs_accesslog_get_period();
+  $current_path = current_path();
+
+  // Start off with the first request... this one!
+  $data = array(
+    array('period' => $period, 'requests' => 1),
+  );
+
+  // Specific options to the Visualization module linechart
+  $options = array(
+    'title' => 'Requests over time',
+    'fields' => array(
+      'period' => array(
+        'label' => t('Requests'),
+        'enabled' => TRUE,
+      ),
+      'requests' => array(
+        'enabled' => FALSE,
+      ),
+    ),
+    'xAxis' => array(
+      'labelField' => 'period',
+    ),
+    'data' => $data,
+    'type' => 'line',
+  );
+
+  // Render array for chart
+  $chart = array(
+    '#theme' => 'visualization',
+    '#options' => $options,
+  );
+
+  // Specific options to the Visualization module map
+  $map_options = array(
+    'title' => 'Map of Requests',
+    'fields' => array(
+      'latitude' => array(
+        'label' => t('Latitude'),
+        'enabled' => TRUE,
+      ),
+      'longitude' => array(
+        'label' => t('Longitude'),
+        'enabled' => TRUE,
+      ),
+      'requests' => array(
+        'label' => t('Requests'),
+        'enabled' => TRUE,
+      ),
+    ),
+    'data' => array(_nodejs_acceslog_get_country() + array('requests' => 1)),
+    'type' => 'map',
+    'dataMode' => 'markers',
+  );
+
+  // Render array for map
+  $map = array(
+    '#theme' => 'visualization',
+    '#options' => $map_options,
+  );
+
+  global $user;
+  // Render array for table
+  $table = array(
+    '#theme' => 'table',
+    '#attributes' => array('id' => 'nodejs_accesslog-table'),
+    '#header' => array(t('Path'), t('Period'), t('User')),
+    '#rows' => array(array(l($current_path, $current_path, array('attributes' => array('target' => '_blank'))), $period, format_username($user))),
+  );
+
+  // Glue them up and ship it off
+  return array($chart, $map, $table);
+}
+
+
+/**
+ * Implements hook_init().
+ *
+ * @todo Check if this channel exists, can't successfully call
+ *       nodejs_get_content_channel_users() with this being
+ *       solved http://drupal.org/node/1506560.
+ */
+function nodejs_accesslog_init() {
+  global $user;
+  $current_path = current_path();
+
+  // Add in our magic js if appropriate
+  if($current_path == 'admin/reports/accesslog' && user_access('access nodejs accesslog', $user))
+    drupal_add_js(drupal_get_path('module', 'nodejs_accesslog') . '/nodejs_accesslog.js');
+
+  // Broadcast an access message to nodejs everywhere
+  $message = (object) array(
+    'channel' => 'nodejs_accesslog',
+    'data' => array(
+      'access' => l($current_path, $current_path, array('attributes' => array('target' => '_blank'))),
+      'period' => _nodejs_accesslog_get_period(),
+      'user' => format_username($user),
+      'country' => _nodejs_acceslog_get_country(),
+    ),
+    'callback' => 'nodejs_accesslog',
+  );
+  nodejs_send_message($message);
+}
+
+
+/**
+ * Implements hook_nodejs_user_channels().
+ *
+ * @param $auth_user
+ *    Drupal user object.
+ */
+function nodejs_accesslog_nodejs_user_channels($auth_user) {
+  // We only want socket.io connections established with people who will use this module
+  if(user_access('access nodejs accesslog', $auth_user)) {
+    return array('nodejs_accesslog');
+  }
+}

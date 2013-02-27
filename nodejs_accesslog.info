@@ -1,0 +1,7 @@
+name = Node.JS Access Log
+description = A simple module that leverages the Node.js integration module to provide a clone of Google Realtime Analytics
+core = 7.x
+dependencies[] = nodejs
+dependencies[] = visualization
+dependencies[] = hostip
+configure = admin/reports/accesslog/settings
